@@ -16,13 +16,13 @@ int parse(char *line, char **argv)
                *line++ = '\0';     
                argc++;
           }
-          *argv++ = line;          
+          if (*line) *argv++ = line;          
           while (*line != '\0' && *line != ' ' && 
                  *line != '\t' && *line != '\n') 
                line++;            
      }
-     *argv = '\0'; 
-     return argc;
+    *argv = '\0'; 
+    return argc;
 }
 
 void execute(char **argv,int argc)
@@ -43,23 +43,32 @@ void execute(char **argv,int argc)
 	}
 }
 
+void strip(char *command)
+{
+	size_t i,j;
+	for (i=0, j=0; command[j]=command[i]; j+=!(command[i++] == '\n'));
+}
+
 int main(){
 	int done=0;
 	char prompt[]="acemaster@oslab$ ";
 	char command[256];
 	char *cmd;
 	char *arg;
+	int i;
+	int k;
 	while(done == 0)
 	{
 		printf("%s",prompt);
 		fgets(command,256,stdin);
 		char *argv[64];
-		int i;
 		int argc;
 		argc=parse(command,argv);
-		printf("%d\n",argc);
-		for(i=0;i<argc;i++)
-			printf("%s\n",argv[i]);
+		// printf("%d\n",argc);
+		// for(i=0;i<argc;i++){
+		// 	printf("%s",argv[i]);
+		// }
+		// printf("sdsadadadadasa\n");
 		if(argc>0)
 		{
 			if(strcmp(argv[0],"exit") == 0)
