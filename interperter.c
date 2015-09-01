@@ -43,12 +43,6 @@ void execute(char **argv,int argc)
 	}
 }
 
-void strip(char *command)
-{
-	size_t i,j;
-	for (i=0, j=0; command[j]=command[i]; j+=!(command[i++] == '\n'));
-}
-
 int main(){
 	int done=0;
 	char prompt[]="acemaster@oslab$ ";
