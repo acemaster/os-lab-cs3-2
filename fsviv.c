@@ -51,7 +51,7 @@ struct INode {
 	unsigned char	i_uid;
 	unsigned char	i_gid;
 	unsigned char	i_gen;
-	unsigned char	i_lnk;
+	unsigned int i_nlinks;	
 };
 
 struct InCoreINode {
@@ -78,6 +78,13 @@ struct INode nullINode;
 char nullbuf[BLKSIZE];
 int DATABLOCKSTART;
 int INODEBLOCKSTART;
+int nsuperblocks;
+int ninodeblocks;
+int nbootblocks;
+int ndatablocks;
+int nrootdirblocks;
+int INODETABLESIZE;
+int MAXDIRENTRIES;
 //============= TESTING APPLICATION USING THESE FS CALLS ==============
 
 // Menu driven testing application for creation of fs, 
@@ -86,6 +93,7 @@ int main()
 {
 	int status;
 	status=OpenDevice(0);
+	MkFS(status);
 	status=ShutdownDevice(0);
 
 }
@@ -98,7 +106,7 @@ int main()
 int MkFS(int dev)
 {
 	bzero(nullbuf,BLKSIZE);
-	write(dev,nullbuf,BLOCKSIZE);
+	write(dev,nullbuf,BLKSIZE);
 
 	//Initailize lengths and variables
 	int i;
@@ -107,7 +115,7 @@ int MkFS(int dev)
 	nbootblocks=1;
 	nrootdirblocks=1;
 	ndatablocks=TOTALBLOCKS-(nsuperblocks+ninodeblocks+nbootblocks+nrootdirblocks);
-	INODETABLESIZE=(ninodeblocks*BLKSIZE)/sizeof(struct Inode);
+	INODETABLESIZE=(ninodeblocks*BLKSIZE)/sizeof(struct INode);
 	MAXDIRENTRIES=BLKSIZE/sizeof(struct DirEntry);
 	DATABLOCKSTART=BLKSIZE*(TOTALBLOCKS-ndatablocks);
 	INODEBLOCKSTART=BLKSIZE*(nsuperblocks+nbootblocks);
@@ -116,8 +124,48 @@ int MkFS(int dev)
 	printf("Maximum directory entries: %d\n",MAXDIRENTRIES);
 	printf("DATABLOCKSTART: %d\n",DATABLOCKSTART);
 	printf("INODEBLOCKSTART: %d\n",INODEBLOCKSTART);
-	//Super block initalization
 
+
+
+	//Super block initalization
+	strcpy(s.sb_vname,"root");
+	s.sb_nino=(ninodeblocks*BLKSIZE)/sizeof(struct INode);
+	s.sb_nblk=ndatablocks;
+	s.sb_nrootdir=nrootdirblocks;
+	s.sb_nfreeblks=s.sb_nblk;
+	s.sb_nfreeinos=s.sb_nino;
+	s.sb_flags=0;
+	bzero(s.sb_freeblks,CACHESIZE);
+	bzero(s.sb_freeinodes,CACHESIZE);
+	s.sb_freeinoindex=CACHESIZE;
+	s.sb_freeblkindex=CACHESIZE;
+	s.sb_ctime=time(NULL);
+	s.sb_chktime=time(NULL);
+	write(dev,&s,sizeof(struct SupBlock));
+	write(dev,nullbuf,(nsuperblocks*BLKSIZE)-sizeof(struct SupBlock));
+	printf("Superblock initalization done\n");
+
+	//initialize inodes
+	nullINode.i_size = 0;
+	nullINode.i_atime = 0;
+	nullINode.i_ctime = 0;
+	nullINode.i_mtime = 0;
+	bzero(nullINode.i_blks, 13);
+	nullINode.i_mode = 0;
+	nullINode.i_uid = 0;
+	nullINode.i_gid = 0;
+	nullINode.i_gen = 0;
+	nullINode.i_nlinks = 0;
+	for(i=0; i<INODETABLESIZE; i++)
+		write(dev, &nullINode, sizeof(struct INode));
+	write(dev, &nullbuf, BLKSIZE%sizeof(struct INode));
+	printf("INodes initialized!\n");
+
+	//Data block initialize
+	printf("%d\n",ndatablocks+nrootdirblocks );
+	for(i=0; i<ndatablocks+nrootdirblocks; i++)
+		write(dev, &nullbuf, BLKSIZE);
+	printf("All data blocks initialized!\n");
 }
 
 // Open/create a file in the given directory with specified uid, gid 
@@ -176,7 +224,7 @@ int WriteDir(int dirhandle, struct DirEntry *dent)
 }
 
 //============== UFS INTERNAL LOW LEVEL ALGORITHMS =============
-int ReadInode(int dev, int ino, struct INode *inode)
+int ReadINode(int dev, int ino, struct INode *inode)
 {
 	lseek(dev,INODEBLOCKSTART+ino*sizeof(struct INode),SEEK_SET);
 	printf("Reading inode %d from file\n",ino);
@@ -191,12 +239,12 @@ int WriteInode(int dev, int ino, struct INode *inode)
 	lseek(dev,INODEBLOCKSTART+ino*(sizeof(struct INode)),SEEK_SET);
 	printf("Writing into inode no: %d\n",ino);
 	inode->i_mtime=time(NULL);
-	write(dev,inode,sizeof(struct Inode));
+	write(dev,inode,sizeof(struct INode));
 	write(fd2,"\n",1);
-	write(fd2,inode,sizeof(struct Inode));
+	write(fd2,inode,sizeof(struct INode));
 }
 
-int AllocInode(int dev,struct Inode *in)
+int AllocInode(int dev,struct INode *in)
 {
 	if(s.sb_freeinoindex == CACHESIZE){
 		int f=fetchFreeINodes(dev);
@@ -212,12 +260,13 @@ int AllocInode(int dev,struct Inode *in)
 }
 int FreeInode(int dev, int ino)
 {
-	struct Inode in;
-	ReadInode(dev,ino,&in);
-	for(int i=0;i<13 && in.i_blks[i] > 0;i++)
+	struct INode in;
+	ReadINode(dev,ino,&in);
+	int i;
+	for(i=0;i<13 && in.i_blks[i] > 0;i++)
 		FreeBlk(dev,in.i_blks[i]);
-	lseek(dev,INODEBLOCKSTART+ino*(sizeof(struct Inode)),SEEK_SET);
-	write(dev,&nullINode,sizeof(Inode));
+	lseek(dev,INODEBLOCKSTART+ino*(sizeof(struct INode)),SEEK_SET);
+	write(dev,&nullINode,sizeof(struct INode));
 	printf("Freed inode %d\n",ino);
 	s.sb_nfreeinos++;
 }
@@ -240,7 +289,7 @@ int AllocBlk(int dev)
 int FreeBlk(int dev, int blk)
 {
 	lseek(dev,BLKSIZE*blk,SEEK_SET);
-	write(dev,&nullbuf,BLOCKSIZE);
+	write(dev,&nullbuf,BLKSIZE);
 	printf("Freed block %d\n",blk);
 	s.sb_nfreeblks++;
 }
@@ -271,9 +320,9 @@ int fetchFreeINodes(int dev){
 	}
 	lseek(dev,BLKSIZE*(nsuperblocks+nbootblocks),SEEK_SET);
 	int i;
-	Inode in;
+	struct INode in;
 	for(i=0;i<INODETABLESIZE && s.sb_freeinoindex>0;i++){
-		read(dev,in,sizeof(struct Inode));
+		read(dev,in,sizeof(struct INode));
 		if(in.i_blks[0]==0){
 			s.sb_freeinodes[--s.sb_freeinoindex]=i;
 		}
