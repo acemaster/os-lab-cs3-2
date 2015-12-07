@@ -295,6 +295,28 @@ int FreeBlk(int dev, int blk)
 }
 
 
+int writeDirEntry(int dev,struct INode *in, int linkno,struct DirEntry *dent)
+{
+	lseek(dev,getDirEntryAddress(linkno,in),SEEK_SET);
+	write(dev,dent,sizeof(struct DirEntry));
+}
+
+
+int readDirEntry(int dev,struct INode *in, int linkno,struct DirEntry *dent)
+{
+	lseek(dev,getDirEntryAddress(linkno,in),SEEK_SET);
+	read(dev,dent,sizeof(struct DirEntry));
+	printf("Read directory %s\n",dent->d_entry.d_name);
+}
+
+int allocDirEntry(int fd, struct INode* in, struct DirEntry* d){
+	writeDirEntry(fd, in, in->i_nlinks, d);
+	in->i_nlinks++;
+	in->i_size = sizeof(struct INode)*in->i_nlinks;
+	printf("Allocated dir entry for %s of inode %u at link no %u\n",d->d_entry.d_name, d->d_entry.d_inode, in->i_nlinks-1);
+}
+
+
 int fetchFreeBlocks(int dev){
 	if(s.sb_nfreeblks == 0){
 		printf("Memory done\n");
